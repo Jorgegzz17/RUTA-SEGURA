@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rutas Seguras - CBTis 258 General Escobedo</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cbtis: {
+                            wine: '#6b1426',
+                            gold: '#d4af37',
+                            navy: '#1e293b',
+                            safe: '#10b981',
+                            warning: '#f59e0b',
+                            danger: '#ef4444'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        #map {
+            height: calc(100vh - 80px);
+            min-height: 450px;
+            width: 100%;
+            z-index: 1;
+        }
+        @media (max-width: 768px) {
+            #map {
+                height: 55vh;
+            }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 4px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+        }
+        .sos-pulse {
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased flex flex-col min-h-screen">
+
+    <!-- Header Navigation -->
+    <header class="bg-slate-900 text-white sticky top-0 z-50 shadow-md border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand / Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-cbtis-wine flex items-center justify-center font-bold text-lg text-white border border-cbtis-gold shadow-sm">
+                        258
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold leading-none text-slate-100">Rutas Seguras</h1>
+                        <p class="text-xs text-slate-400 mt-0.5">CBTis 258 • Gral. Escobedo, N.L.</p>
+                    </div>
+                </div>
+
+                <!-- Emergency SOS Trigger Button -->
+                <button onclick="toggleSOSModal()" class="sos-pulse bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-full font-bold text-xs sm:text-sm flex items-center space-x-2 transition duration-200">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>ALERTA SOS</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 flex flex-col md:flex-row relative overflow-hidden max-w-7xl w-full mx-auto">
+        
+        <!-- Sidebar Controls & Reports (Desktop Left Panel / Mobile Below Map) -->
+        <aside class="w-full md:w-96 bg-white border-r border-slate-200 flex flex-col z-20 shadow-lg md:shadow-none h-auto md:h-[calc(100vh-64px)] overflow-y-auto custom-scrollbar order-2 md:order-1">
+            
+            <!-- Turno / Mode Quick Switcher -->
+            <div class="p-4 bg-slate-900 text-white border-b border-slate-800">
+                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Filtro de Turno & Iluminación</label>
+                <div class="grid grid-cols-2 gap-2 p-1 bg-slate-800 rounded-lg">
+                    <button id="btn-matutino" onclick="setShift('matutino')" class="py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition bg-amber-500 text-slate-950 shadow">
+                        <i class="fa-solid fa-sun text-slate-950"></i>
+                        <span>Matutino</span>
+                    </button>
+                    <button id="btn-vespertino" onclick="setShift('vespertino')" class="py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition text-slate-300 hover:text-white">
+                        <i class="fa-solid fa-moon"></i>
+                        <span>Vespertino</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Transport Filter Tabs -->
+            <div class="p-4 border-b border-slate-100">
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Medio de Transporte</label>
+                <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-medium">
+                    <button onclick="filterTransport('all')" id="tab-all" class="transport-tab active py-2 rounded-lg text-center bg-white shadow-sm text-slate-800 font-semibold">
+                        Todos
+                    </button>
+                    <button onclick="filterTransport('walk')" id="tab-walk" class="transport-tab py-2 rounded-lg text-center text-slate-600 hover:bg-slate-200">
+                        <i class="fa-solid fa-person-walking mr-1"></i> Peatonal
+                    </button>
+                    <button onclick="filterTransport('bus')" id="tab-bus" class="transport-tab py-2 rounded-lg text-center text-slate-600 hover:bg-slate-200">
+                        <i class="fa-solid fa-bus mr-1"></i> Camión
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Legend & Layers -->
+            <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+                <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center justify-between">
+                    <span>Capas en el Mapa</span>
+                    <span class="text-[10px] text-slate-400 font-normal">Toca para toggle</span>
+                </h3>
+                <div class="space-y-2 text-xs">
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-emerald-400 transition">
+                        <div class="flex items-center space-x-2.5">
+                            <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+                            <span class="font-medium text-slate-700">Rutas Principales Seguras</span>
+                        </div>
+                        <input type="checkbox" id="layer-routes" checked onchange="toggleMapLayer('routes')" class="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4">
+                    </label>
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-blue-400 transition">
+                        <div class="flex items-center space-x-2.5">
+                            <i class="fa-solid fa-store text-blue-600"></i>
+                            <span class="font-medium text-slate-700">Comercios y Puntos Seguros</span>
+                        </div>
+                        <input type="checkbox" id="layer-safe-points" checked onchange="toggleMapLayer('safePoints')" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
+                    </label>
+                    <label class="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-amber-400 transition">
+                        <div class="flex items-center space-x-2.5">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-500"></i>
+                            <span class="font-medium text-slate-700">Reportes de la Comunidad</span>
+                        </div>
+                        <input type="checkbox" id="layer-reports" checked onchange="toggleMapLayer('reports')" class="rounded text-amber-600 focus:ring-amber-500 h-4 w-4">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Community Report Action & Feed -->
+            <div class="p-4 flex-1 flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                        <i class="fa-solid fa-bullhorn text-cbtis-wine"></i>
+                        <span>Reportes Recientes</span>
+                    </h3>
+                    <button onclick="openReportModal()" class="text-xs bg-cbtis-wine hover:bg-red-900 text-white px-2.5 py-1.5 rounded-lg font-semibold flex items-center space-x-1 shadow-sm transition">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Nuevo Reporte</span>
+                    </button>
+                </div>
+
+                <!-- Reports List Container -->
+                <div id="reports-container" class="space-y-2.5 flex-1 overflow-y-auto pr-1">
+                    <!-- Dynamic Reports inserted via JS -->
+                </div>
+            </div>
+
+            <!-- Quick Direct Emergency Dial Bar Footer -->
+            <div class="p-3 bg-slate-100 border-t border-slate-200">
+                <p class="text-[10px] text-slate-500 uppercase font-bold mb-2 tracking-wider text-center">Contactos Rápidos de Emergencia</p>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <a href="tel:8182869200" class="flex items-center justify-center space-x-1.5 py-2 px-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition">
+                        <i class="fa-solid fa-shield-halved text-blue-600"></i>
+                        <span class="truncate">C4 Escobedo</span>
+                    </a>
+                    <a href="tel:8183971666" class="flex items-center justify-center space-x-1.5 py-2 px-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition">
+                        <i class="fa-solid fa-school text-cbtis-wine"></i>
+                        <span class="truncate">CBTis 258</span>
+                    </a>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- Main Map Area & Floating Safety Cards -->
+        <section class="flex-1 flex flex-col relative order-1 md:order-2">
+            
+            <!-- Map Container -->
+            <div id="map"></div>
+
+            <!-- Top Floating Quick Tips Bar on Map -->
+            <div class="absolute top-4 left-4 right-4 z-[500] pointer-events-none flex justify-center">
+                <div id="night-warning-banner" class="hidden bg-slate-900/90 backdrop-blur text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs sm:text-sm border border-slate-700 pointer-events-auto flex items-center space-x-3 max-w-lg">
+                    <i class="fa-solid fa-moon text-amber-400 text-lg"></i>
+                    <div>
+                        <p class="font-bold text-amber-400">Modo Salida Nocturna Activo</p>
+                        <p class="text-slate-300 text-xs">Usa la avenida iluminada Raúl Salinas. Camina siempre en grupos hacia las paradas de Transmetro.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Safety Guidelines & Tips Modal/Drawer Switcher -->
+            <div class="bg-white border-t border-slate-200 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                        <i class="fa-solid fa-user-shield text-emerald-600"></i>
+                        <span>Recomendaciones de Seguridad Preventiva</span>
+                    </h2>
+                    <span class="text-xs text-slate-400">Plantel CBTis 258</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div class="flex items-center space-x-2 text-slate-800 font-semibold text-xs mb-1">
+                            <i class="fa-solid fa-people-group text-blue-600"></i>
+                            <span>Caminata en Grupo</span>
+                        </div>
+                        <p class="text-xs text-slate-600">Procura caminar acompañado en el tramo de Plinio D. Ordóñez hacia Raúl Salinas, especialmente al salir a las 20:00 hrs.</p>
+                    </div>
+
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div class="flex items-center space-x-2 text-slate-800 font-semibold text-xs mb-1">
+                            <i class="fa-solid fa-mobile-screen-button text-amber-600"></i>
+                            <span>Uso Discreto del Teléfono</span>
+                        </div>
+                        <p class="text-xs text-slate-600">Evita distracción con audífonos o teléfono visible mientras caminas hacia las paradas de la Ruta 207 o Ruta 1.</p>
+                    </div>
+
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div class="flex items-center space-x-2 text-slate-800 font-semibold text-xs mb-1">
+                            <i class="fa-solid fa-store text-emerald-600"></i>
+                            <span>Red de Comercios</span>
+                        </div>
+                        <p class="text-xs text-slate-600">Ante cualquier eventualidad, ingresa a las tiendas marcadas como Punto Seguro sobre Plinio D. Ordóñez.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal: Report Incident -->
+    <div id="report-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-150">
+            <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                    <h3 class="font-bold text-sm">Reportar Inseguridad o Riesgo</h3>
+                </div>
+                <button onclick="closeReportModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <form id="report-form" onsubmit="handleReportSubmit(event)" class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Tipo de Reporte</label>
+                    <select id="report-type" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-cbtis-wine focus:border-cbtis-wine outline-none">
+                        <option value="Luz Fundida / Zona Oscura">💡 Luminaria Fundida / Falta de Luz</option>
+                        <option value="Presencia Escasa de Vía">👮 Necesidad de Presencia Vial / Policía</option>
+                        <option value="Zona Solitaria / Sospechosa">👁️ Zona Solitaria o Terreno Baldío</option>
+                        <option value="Tráfico / Banqueta Obstruida">⚠️ Banqueta Obstruida / Tráfico Pesado</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Ubicación / Referencia</label>
+                    <input type="text" id="report-location" placeholder="Ej: Esquina Plinio D. Ordóñez y Topo Chico" required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-cbtis-wine outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Descripción breve</label>
+                    <textarea id="report-description" rows="3" placeholder="Describe brevemente la situación para alertar a otros compañeros..." required class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs focus:ring-2 focus:ring-cbtis-wine outline-none"></textarea>
+                </div>
+
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start space-x-2">
+                    <i class="fa-solid fa-circle-info text-amber-600 text-xs mt-0.5"></i>
+                    <p class="text-[11px] text-amber-800 leading-tight">
+                        Este reporte aparecerá en el mapa de la comunidad para prevenir a estudiantes y padres de familia.
+                    </p>
+                </div>
+
+                <div class="flex space-x-2 pt-2">
+                    <button type="button" onclick="closeReportModal()" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition">Cancelar</button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-cbtis-wine hover:bg-red-900 text-white rounded-xl font-bold text-xs shadow-md transition">Publicar Reporte</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Emergency SOS Alert -->
+    <div id="sos-modal" class="fixed inset-0 bg-red-950/80 backdrop-blur-md z-[1000] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center border-2 border-red-500">
+            <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold border border-red-200">
+                <i class="fa-solid fa-phone-flip animate-bounce"></i>
+            </div>
+            
+            <h3 class="text-xl font-black text-slate-900 mb-1">Centro de Emergencias</h3>
+            <p class="text-xs text-slate-500 mb-6">Selecciona una línea de respuesta inmediata para General Escobedo:</p>
+
+            <div class="space-y-3">
+                <a href="tel:911" class="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-between shadow-lg shadow-red-200 transition">
+                    <span class="flex items-center space-x-2">
+                        <i class="fa-solid fa-shield-cat"></i>
+                        <span>Emergencias Nacionales</span>
+                    </span>
+                    <span class="bg-red-800 px-2 py-0.5 rounded text-xs">911</span>
+                </a>
+
+                <a href="tel:8182869200" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-between shadow-md transition">
+                    <span class="flex items-center space-x-2">
+                        <i class="fa-solid fa-building-shield"></i>
+                        <span>C4 Escobedo (Policía)</span>
+                    </span>
+                    <span class="text-xs text-slate-400">81 8286 9200</span>
+                </a>
+
+                <a href="tel:8183971666" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-between transition">
+                    <span class="flex items-center space-x-2">
+                        <i class="fa-solid fa-school"></i>
+                        <span>Dirección CBTis 258</span>
+                    </span>
+                    <span class="text-xs text-slate-500">Plantel</span>
+                </a>
+            </div>
+
+            <button onclick="toggleSOSModal()" class="mt-6 text-xs text-slate-400 font-semibold hover:text-slate-600">
+                Cerrar ventana
+            </button>
+        </div>
+    </div>
+
+    <!-- Application JavaScript Logic -->
+    <script>
+        // Global State & Map Variables
+        let map;
+        let currentShift = 'matutino'; // 'matutino' | 'vespertino'
+        let currentTransport = 'all'; // 'all' | 'walk' | 'bus'
+        
+        // Layers Groups
+        let routesLayerGroup;
+        let safePointsLayerGroup;
+        let reportsLayerGroup;
+
+        // CBTis 258 Coordinates (Plinio D. Ordóñez #801, Escobedo, NL)
+        const CBTIS_COORDS = [25.7952, -100.3348];
+
+        // Safe Points Mock Data
+        const safePoints = [
+            {
+                id: 1,
+                name: "CBTis 258 - Acceso Principal",
+                type: "school",
+                coords: [25.7952, -100.3348],
+                desc: "Vigilancia en acceso principal y caseta del plantel.",
+                icon: "fa-school",
+                color: "#6b1426"
+            },
+            {
+                id: 2,
+                name: "Comercio Seguro - Abarrotes El Topo",
+                type: "store",
+                coords: [25.7946, -100.3365],
+                desc: "Local iluminado con teléfono y auxilio vecinal.",
+                icon: "fa-store",
+                color: "#2563eb"
+            },
+            {
+                id: 3,
+                name: "Parada Iluminada Transmetro / Camión",
+                type: "bus",
+                coords: [25.7965, -100.3315],
+                desc: "Parada sobre Av. Raúl Salinas con constante flujo de alumnos.",
+                icon: "fa-bus-simple",
+                color: "#059669"
+            },
+            {
+                id: 4,
+                name: "Caseta Auxiliar de Vigilancia",
+                type: "police",
+                coords: [25.7938, -100.3380],
+                desc: "Módulo con presencia periódica de Policía Municipal de Escobedo.",
+                icon: "fa-shield-halved",
+                color: "#7c3aed"
+            }
+        ];
+
+        // Initial Community Reports Data
+        let reports = [
+            {
+                id: 101,
+                type: "Luz Fundida / Zona Oscura",
+                location: "Calle Plinio D. Ordóñez tramo cercano a cancha",
+                description: "Falta iluminación en la luminaria #4. Se recomienda caminar en grupos.",
+                coords: [25.7956, -100.3332],
+                likes: 12,
+                time: "Hace 2 horas"
+            },
+            {
+                id: 102,
+                type: "Presencia Escasa de Vía",
+                location: "Cruce Raúl Salinas y Plinio Ordóñez",
+                description: "Tráfico pesado a las 13:45 hrs en cambio de turno. Precaución al cruzar.",
+                coords: [25.7964, -100.3318],
+                likes: 8,
+                time: "Hace 5 horas"
+            }
+        ];
+
+        // Routes Coordinates
+        const routePeatonal = [
+            [25.7964, -100.3315], // Av Raúl Salinas
+            [25.7958, -100.3330], 
+            [25.7952, -100.3348]  // CBTis 258
+        ];
+
+        const routeTransmetro = [
+            [25.7985, -100.3305],
+            [25.7964, -100.3315],
+            [25.7940, -100.3325]
+        ];
+
+        // Initialize App on DOM Loaded
+        document.addEventListener("DOMContentLoaded", () => {
+            initMap();
+            renderReports();
+        });
+
+        // Map Initialization
+        function initMap() {
+            // Create Map centered at CBTis 258
+            map = L.map('map', {
+                zoomControl: true,
+            }).setView(CBTIS_COORDS, 16);
+
+            // OpenStreetMap Tile Layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors | CBTis 258 Rutas Seguras'
+            }).addTo(map);
+
+            // Initialize Layer Groups
+            routesLayerGroup = L.layerGroup().addTo(map);
+            safePointsLayerGroup = L.layerGroup().addTo(map);
+            reportsLayerGroup = L.layerGroup().addTo(map);
+
+            // Draw Elements
+            drawRoutes();
+            drawSafePoints();
+            drawReportMarkers();
+        }
+
+        // Draw Safe Polylines
+        function drawRoutes() {
+            routesLayerGroup.clearLayers();
+
+            // Peatonal Route (Main Walkway)
+            if (currentTransport === 'all' || currentTransport === 'walk') {
+                const color = currentShift === 'vespertino' ? '#f59e0b' : '#10b981';
+                const walkPolyline = L.polyline(routePeatonal, {
+                    color: color,
+                    weight: 6,
+                    opacity: 0.85,
+                    dashArray: currentShift === 'vespertino' ? '8, 8' : null
+                }).addTo(routesLayerGroup);
+
+                walkPolyline.bindPopup(`
+                    <div class="p-2">
+                        <span class="bg-emerald-100 text-emerald-800 font-bold text-[10px] uppercase px-2 py-0.5 rounded">Ruta Peatonal Principal</span>
+                        <h4 class="font-bold text-xs text-slate-800 mt-1">Av. Raúl Salinas ➔ Entrada CBTis 258</h4>
+                        <p class="text-[11px] text-slate-600 mt-1">Vía recomendada con mayor iluminación y paso de compañeros.</p>
+                    </div>
+                `);
+            }
+
+            // Public Transport Route
+            if (currentTransport === 'all' || currentTransport === 'bus') {
+                const busPolyline = L.polyline(routeTransmetro, {
+                    color: '#2563eb',
+                    weight: 4,
+                    opacity: 0.7
+                }).addTo(routesLayerGroup);
+
+                busPolyline.bindPopup(`
+                    <div class="p-2">
+                        <span class="bg-blue-100 text-blue-800 font-bold text-[10px] uppercase px-2 py-0.5 rounded">Corredor Transmetro / Camión</span>
+                        <h4 class="font-bold text-xs text-slate-800 mt-1">Ruta 207 / Ruta 1 / Transmetro</h4>
+                        <p class="text-[11px] text-slate-600 mt-1">Conexión directa con la avenida principal.</p>
+                    </div>
+                `);
+            }
+        }
+
+        // Custom HTML Marker Creator
+        function createCustomIcon(iconClass, bgColor) {
+            return L.divIcon({
+                html: `
+                    <div style="background-color: ${bgColor};" class="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-lg border-2 border-white transform transition hover:scale-110">
+                        <i class="fa-solid ${iconClass} text-xs"></i>
+                    </div>
+                `,
+                className: 'custom-leaflet-marker',
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -28]
+            });
+        }
+
+        // Draw Safe Points Markers
+        function drawSafePoints() {
+            safePointsLayerGroup.clearLayers();
+
+            safePoints.forEach(point => {
+                const icon = createCustomIcon(point.icon, point.color);
+                const marker = L.marker(point.coords, { icon: icon }).addTo(safePointsLayerGroup);
+
+                marker.bindPopup(`
+                    <div class="p-2 max-w-xs">
+                        <div class="flex items-center space-x-2 mb-1">
+                            <span class="w-2 h-2 rounded-full" style="background-color: ${point.color}"></span>
+                            <h4 class="font-bold text-xs text-slate-900">${point.name}</h4>
+                        </div>
+                        <p class="text-[11px] text-slate-600 leading-snug">${point.desc}</p>
+                    </div>
+                `);
+            });
+        }
+
+        // Draw Community Incident Markers
+        function drawReportMarkers() {
+            reportsLayerGroup.clearLayers();
+
+            reports.forEach(report => {
+                const icon = createCustomIcon("fa-triangle-exclamation", "#f59e0b");
+                const marker = L.marker(report.coords, { icon: icon }).addTo(reportsLayerGroup);
+
+                marker.bindPopup(`
+                    <div class="p-2">
+                        <span class="bg-amber-100 text-amber-800 font-bold text-[10px] uppercase px-1.5 py-0.5 rounded">${report.type}</span>
+                        <h4 class="font-bold text-xs text-slate-900 mt-1">${report.location}</h4>
+                        <p class="text-[11px] text-slate-600 mt-1">${report.description}</p>
+                        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                            <span>${report.time}</span>
+                            <span class="text-amber-600 font-bold"><i class="fa-solid fa-thumbs-up mr-1"></i>${report.likes} apoyo</span>
+                        </div>
+                    </div>
+                `);
+            });
+        }
+
+        // Render Reports Side List
+        function renderReports() {
+            const container = document.getElementById('reports-container');
+            container.innerHTML = '';
+
+            if (reports.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No hay reportes recientes.</p>`;
+                return;
+            }
+
+            reports.forEach(report => {
+                const card = document.createElement('div');
+                card.className = "p-3 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-slate-300 transition cursor-pointer";
+                card.onclick = () => {
+                    map.flyTo(report.coords, 18);
+                };
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between">
+                        <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            ${report.type}
+                        </span>
+                        <span class="text-[10px] text-slate-400">${report.time}</span>
+                    </div>
+                    <h4 class="text-xs font-bold text-slate-800 mt-1.5">${report.location}</h4>
+                    <p class="text-[11px] text-slate-600 mt-0.5 line-clamp-2">${report.description}</p>
+                    <div class="mt-2 flex items-center justify-between text-xs pt-1">
+                        <button onclick="likeReport(event, ${report.id})" class="text-[11px] text-slate-500 hover:text-cbtis-wine font-medium flex items-center space-x-1">
+                            <i class="fa-regular fa-thumbs-up"></i>
+                            <span>Útil (${report.likes})</span>
+                        </button>
+                        <span class="text-[10px] text-cbtis-wine font-bold flex items-center">
+                            Ver en mapa <i class="fa-solid fa-chevron-right ml-1 text-[8px]"></i>
+                        </span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Handle Report Likes / Upvotes
+        function likeReport(e, id) {
+            e.stopPropagation();
+            const report = reports.find(r => r.id === id);
+            if (report) {
+                report.likes++;
+                renderReports();
+                drawReportMarkers();
+            }
+        }
+
+        // Shift Filter Switcher Logic
+        function setShift(shift) {
+            currentShift = shift;
+            const btnMat = document.getElementById('btn-matutino');
+            const btnVesp = document.getElementById('btn-vespertino');
+            const nightBanner = document.getElementById('night-warning-banner');
+
+            if (shift === 'matutino') {
+                btnMat.className = "py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition bg-amber-500 text-slate-950 shadow";
+                btnVesp.className = "py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition text-slate-300 hover:text-white";
+                nightBanner.classList.add('hidden');
+            } else {
+                btnVesp.className = "py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition bg-indigo-600 text-white shadow";
+                btnMat.className = "py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition text-slate-300 hover:text-white";
+                nightBanner.classList.remove('hidden');
+            }
+
+            drawRoutes();
+        }
+
+        // Transport Mode Filter Switcher
+        function filterTransport(type) {
+            currentTransport = type;
+            document.querySelectorAll('.transport-tab').forEach(tab => {
+                tab.className = "transport-tab py-2 rounded-lg text-center text-slate-600 hover:bg-slate-200 text-xs font-medium";
+            });
+
+            const activeTab = document.getElementById(`tab-${type}`);
+            if (activeTab) {
+                activeTab.className = "transport-tab active py-2 rounded-lg text-center bg-white shadow-sm text-slate-800 font-semibold text-xs";
+            }
+
+            drawRoutes();
+        }
+
+        // Map Layers Toggle
+        function toggleMapLayer(layer) {
+            if (layer === 'routes') {
+                const checked = document.getElementById('layer-routes').checked;
+                checked ? map.addLayer(routesLayerGroup) : map.removeLayer(routesLayerGroup);
+            } else if (layer === 'safePoints') {
+                const checked = document.getElementById('layer-safe-points').checked;
+                checked ? map.addLayer(safePointsLayerGroup) : map.removeLayer(safePointsLayerGroup);
+            } else if (layer === 'reports') {
+                const checked = document.getElementById('layer-reports').checked;
+                checked ? map.addLayer(reportsLayerGroup) : map.removeLayer(reportsLayerGroup);
+            }
+        }
+
+        // Modal Handlers
+        function openReportModal() {
+            document.getElementById('report-modal').classList.remove('hidden');
+        }
+
+        function closeReportModal() {
+            document.getElementById('report-modal').classList.add('hidden');
+        }
+
+        function toggleSOSModal() {
+            const sosModal = document.getElementById('sos-modal');
+            sosModal.classList.toggle('hidden');
+        }
+
+        // Handle Report Form Submit
+        function handleReportSubmit(e) {
+            e.preventDefault();
+            const type = document.getElementById('report-type').value;
+            const location = document.getElementById('report-location').value;
+            const description = document.getElementById('report-description').value;
+
+            // Offset slightly around CBTis 258 for mock placement
+            const latOffset = (Math.random() - 0.5) * 0.004;
+            const lngOffset = (Math.random() - 0.5) * 0.004;
+
+            const newReport = {
+                id: Date.now(),
+                type,
+                location,
+                description,
+                coords: [CBTIS_COORDS[0] + latOffset, CBTIS_COORDS[1] + lngOffset],
+                likes: 1,
+                time: "Justo ahora"
+            };
+
+            reports.unshift(newReport);
+            renderReports();
+            drawReportMarkers();
+            closeReportModal();
+
+            // Reset Form
+            document.getElementById('report-form').reset();
+            
+            // Focus on map new report
+            map.flyTo(newReport.coords, 17);
+        }
+    </script>
+</body>
+</html>
