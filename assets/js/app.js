@@ -6,44 +6,23 @@
 
 /* ---------------- Estado global ---------------- */
 let map;
-let currentShift = 'matutino';        // 'matutino' | 'vespertino'
-let currentTransport = 'all';         // 'all' | 'walk' | 'bus'
 let currentTypeFilter = '';
 let searchQuery = '';
 let searchDebounce = null;
 let reports = [];
 let selectedSeverity = 'media';
-let pickedCoords = null;              // Coordenadas elegidas en el mapa / GPS
+let pickedCoords = null;
 let tempMarker = null;
 let pickingLocation = false;
-let userMarker = null;
-
-let routesLayerGroup;
-let safePointsLayerGroup;
 let reportsLayerGroup;
+let campusLayerGroup;
+let safePointsLayerGroup;
+let safeRoutesLayerGroup;
 
 const API_URL = 'api/reports.php';
-const CBTIS_COORDS = [25.7952, -100.3348];
-
-/* ---------------- Datos estáticos ---------------- */
-const safePoints = [
-    { id: 1, name: 'CBTis 258 - Acceso Principal', type: 'school', coords: [25.7952, -100.3348], desc: 'Vigilancia en acceso principal y caseta del plantel.', icon: 'fa-school', color: '#6b1426' },
-    { id: 2, name: 'Comercio Seguro - Abarrotes El Topo', type: 'store', coords: [25.7946, -100.3365], desc: 'Local iluminado con teléfono y auxilio vecinal.', icon: 'fa-store', color: '#2563eb' },
-    { id: 3, name: 'Parada Iluminada Transmetro / Camión', type: 'bus', coords: [25.7965, -100.3315], desc: 'Parada sobre Av. Raúl Salinas con constante flujo de alumnos.', icon: 'fa-bus-simple', color: '#059669' },
-    { id: 4, name: 'Caseta Auxiliar de Vigilancia', type: 'police', coords: [25.7938, -100.3380], desc: 'Módulo con presencia periódica de Policía Municipal de Escobedo.', icon: 'fa-shield-halved', color: '#7c3aed' }
-];
-
-const routePeatonal = [
-    [25.7964, -100.3315],
-    [25.7958, -100.3330],
-    [25.7952, -100.3348]
-];
-
-const routeTransmetro = [
-    [25.7985, -100.3305],
-    [25.7964, -100.3315],
-    [25.7940, -100.3325]
-];
+const CBTIS_COORDS = [25.7877647, -100.3296582];
+let campusCoords = CBTIS_COORDS;
+let campusMarker = null;
 
 const SEVERITY_COLORS = { baja: '#10b981', media: '#f59e0b', alta: '#ef4444' };
 const SEVERITY_LABELS = { baja: 'Baja', media: 'Media', alta: 'Alta' };
@@ -55,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initMap();
     loadReports();
+    loadMapLocations();
     loadStats();
 });
 
@@ -83,62 +63,81 @@ function updateThemeIcon() {
 }
 
 /* ============================================================
-   Mapa
+   Mapa y ubicaciones de reportes
    ============================================================ */
 function initMap() {
     map = L.map('map', { zoomControl: true }).setView(CBTIS_COORDS, 16);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors | CBTis 258 Rutas Seguras'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> | CBTis 258 Rutas Seguras'
     }).addTo(map);
 
-    routesLayerGroup = L.layerGroup().addTo(map);
-    safePointsLayerGroup = L.layerGroup().addTo(map);
     reportsLayerGroup = L.layerGroup().addTo(map);
-
-    drawRoutes();
-    drawSafePoints();
-
-    map.on('click', (e) => {
+    campusLayerGroup = L.layerGroup().addTo(map);
+    safePointsLayerGroup = L.layerGroup().addTo(map);
+    safeRoutesLayerGroup = L.layerGroup().addTo(map);
+    map.on('click', event => {
         if (!pickingLocation) return;
-        setPickedCoords(e.latlng.lat, e.latlng.lng);
+        setPickedCoords(event.latlng.lat, event.latlng.lng);
         stopMapPick();
         openReportModal();
     });
 }
 
-function drawRoutes() {
-    routesLayerGroup.clearLayers();
+async function loadMapLocations() {
+    try {
+        const response = await fetch('api/locations.php?action=list');
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudieron cargar las ubicaciones');
 
-    if (currentTransport === 'all' || currentTransport === 'walk') {
-        const color = currentShift === 'vespertino' ? '#f59e0b' : '#10b981';
-        const walkPolyline = L.polyline(routePeatonal, {
-            color, weight: 6, opacity: 0.85,
-            dashArray: currentShift === 'vespertino' ? '8, 8' : null
-        }).addTo(routesLayerGroup);
+        campusLayerGroup.clearLayers();
+        safePointsLayerGroup.clearLayers();
+        safeRoutesLayerGroup.clearLayers();
 
-        walkPolyline.bindPopup(`
-            <div class="p-2">
-                <span class="bg-emerald-100 text-emerald-800 font-bold text-[10px] uppercase px-2 py-0.5 rounded">Ruta Peatonal Principal</span>
-                <h4 class="font-bold text-xs text-slate-800 mt-1">Av. Raúl Salinas ➔ Entrada CBTis 258</h4>
-                <p class="text-[11px] text-slate-600 mt-1">Vía recomendada con mayor iluminación y paso de compañeros.</p>
-            </div>
-        `);
-    }
+        const campus = result.data.campus;
+        if (campus) {
+            const coords = [Number(campus.latitude), Number(campus.longitude)];
+            campusCoords = coords;
+            campusMarker = L.marker(coords, { icon: createCustomIcon('fa-school', '#6b1426') }).addTo(campusLayerGroup);
+            campusMarker.bindPopup(`
+                <div class="p-2">
+                    <strong>${escapeHtml(campus.name)}</strong>
+                    <p class="text-xs mt-1">${escapeHtml(campus.address)}</p>
+                    ${campus.description ? `<p class="text-xs mt-1">${escapeHtml(campus.description)}</p>` : ''}
+                </div>
+            `);
+            map.setView(coords, 16);
+        }
 
-    if (currentTransport === 'all' || currentTransport === 'bus') {
-        const busPolyline = L.polyline(routeTransmetro, {
-            color: '#2563eb', weight: 4, opacity: 0.7
-        }).addTo(routesLayerGroup);
+        result.data.safePoints.forEach(point => {
+            const marker = L.marker([Number(point.latitude), Number(point.longitude)], {
+                icon: createCustomIcon('fa-shield-halved', '#15803d')
+            }).addTo(safePointsLayerGroup);
+            marker.bindPopup(`
+                <div class="p-2">
+                    <strong>${escapeHtml(point.name)}</strong>
+                    <p class="text-xs mt-1">${escapeHtml(point.address)}</p>
+                    ${point.description ? `<p class="text-xs mt-1">${escapeHtml(point.description)}</p>` : ''}
+                </div>
+            `);
+        });
 
-        busPolyline.bindPopup(`
-            <div class="p-2">
-                <span class="bg-blue-100 text-blue-800 font-bold text-[10px] uppercase px-2 py-0.5 rounded">Corredor Transmetro / Camión</span>
-                <h4 class="font-bold text-xs text-slate-800 mt-1">Ruta 207 / Ruta 1 / Transmetro</h4>
-                <p class="text-[11px] text-slate-600 mt-1">Conexión directa con la avenida principal.</p>
-            </div>
-        `);
+        result.data.routes.forEach(route => {
+            const line = L.polyline(
+                route.points.map(point => [Number(point.latitude), Number(point.longitude)]),
+                { color: route.color, weight: 5, opacity: 0.85 }
+            ).addTo(safeRoutesLayerGroup);
+            line.bindPopup(`
+                <div class="p-2">
+                    <strong>${escapeHtml(route.name)}</strong>
+                    ${route.description ? `<p class="text-xs mt-1">${escapeHtml(route.description)}</p>` : ''}
+                    <p class="text-xs mt-1">Ruta segura al plantel</p>
+                </div>
+            `);
+        });
+    } catch (error) {
+        showToast(error.message, 'error');
     }
 }
 
@@ -156,28 +155,8 @@ function createCustomIcon(iconClass, bgColor, extraClass = '') {
     });
 }
 
-function drawSafePoints() {
-    safePointsLayerGroup.clearLayers();
-
-    safePoints.forEach(point => {
-        const marker = L.marker(point.coords, { icon: createCustomIcon(point.icon, point.color) })
-            .addTo(safePointsLayerGroup);
-
-        marker.bindPopup(`
-            <div class="p-2 max-w-xs">
-                <div class="flex items-center space-x-2 mb-1">
-                    <span class="w-2 h-2 rounded-full" style="background-color: ${point.color}"></span>
-                    <h4 class="font-bold text-xs text-slate-900">${point.name}</h4>
-                </div>
-                <p class="text-[11px] text-slate-600 leading-snug">${point.desc}</p>
-            </div>
-        `);
-    });
-}
-
 function drawReportMarkers() {
     reportsLayerGroup.clearLayers();
-
     reports.forEach(report => {
         const color = report.status === 'resuelto' ? '#94a3b8' : (SEVERITY_COLORS[report.severity] || '#f59e0b');
         const marker = L.marker([report.latitude, report.longitude], {
@@ -246,7 +225,7 @@ async function handleReportSubmit(e) {
     e.preventDefault();
 
     if (!pickedCoords) {
-        showToast('Indica la ubicación exacta con GPS o marcándola en el mapa', 'error');
+        showToast('Selecciona una ubicación con GPS o marcando el mapa', 'error');
         return;
     }
 
@@ -279,7 +258,7 @@ async function handleReportSubmit(e) {
         clearPickedCoords();
         await loadReports();
         loadStats();
-        map.flyTo([json.data.latitude, json.data.longitude], 17);
+        moveMapTo([json.data.latitude, json.data.longitude], 17);
     } catch (err) {
         showToast(err.message, 'error');
     } finally {
@@ -319,7 +298,7 @@ function renderReports() {
         container.innerHTML = `
             <div class="text-center py-8">
                 <i class="fa-solid fa-shield-heart text-emerald-300 text-3xl mb-2"></i>
-                <p class="text-xs text-slate-400">No hay reportes con estos filtros.<br>¡La zona está tranquila!</p>
+            <p class="text-xs text-slate-400">Todavía no hay reportes. Puedes agregar una ubicación verificada.</p>
             </div>`;
         return;
     }
@@ -331,7 +310,7 @@ function renderReports() {
         const card = document.createElement('div');
         card.className = `p-3 bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:border-slate-300 dark:hover:border-slate-600 transition cursor-pointer ${isResolved ? 'opacity-60' : ''}`;
         card.onclick = () => {
-            map.flyTo([report.latitude, report.longitude], 18);
+            moveMapTo([report.latitude, report.longitude], 18);
             if (window.innerWidth < 768) closeSidebar();
         };
 
@@ -382,67 +361,25 @@ function setTypeFilter(type) {
     loadReports();
 }
 
-function setShift(shift) {
-    currentShift = shift;
-    const btnMat = document.getElementById('btn-matutino');
-    const btnVesp = document.getElementById('btn-vespertino');
-    const nightBanner = document.getElementById('night-warning-banner');
-
-    const activeCls = 'py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition shadow';
-    const inactiveCls = 'py-2 px-3 rounded-md text-xs font-semibold flex items-center justify-center space-x-2 transition text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white';
-
-    if (shift === 'matutino') {
-        btnMat.className = activeCls + ' bg-amber-500 text-slate-950';
-        btnVesp.className = inactiveCls;
-        nightBanner.classList.add('hidden');
-    } else {
-        btnVesp.className = activeCls + ' bg-indigo-600 text-white';
-        btnMat.className = inactiveCls;
-        nightBanner.classList.remove('hidden');
-    }
-
-    drawRoutes();
-}
-
-function filterTransport(type) {
-    currentTransport = type;
-    document.querySelectorAll('.transport-tab').forEach(tab => {
-        tab.className = 'transport-tab py-2 rounded-lg text-center text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-medium';
-    });
-    const activeTab = document.getElementById(`tab-${type}`);
-    if (activeTab) {
-        activeTab.className = 'transport-tab py-2 rounded-lg text-center bg-white dark:bg-slate-700 shadow-sm text-slate-800 dark:text-slate-100 font-semibold text-xs';
-    }
-    drawRoutes();
-}
-
 function toggleMapLayer(layer) {
-    const groups = { routes: routesLayerGroup, safePoints: safePointsLayerGroup, reports: reportsLayerGroup };
-    const ids = { routes: 'layer-routes', safePoints: 'layer-safe-points', reports: 'layer-reports' };
+    const groups = {
+        reports: reportsLayerGroup,
+        routes: safeRoutesLayerGroup,
+        campus: campusLayerGroup,
+        safePoints: safePointsLayerGroup
+    };
+    const ids = { reports: 'layer-reports', routes: 'layer-routes', campus: 'layer-campus', safePoints: 'layer-safe-points' };
     const checked = document.getElementById(ids[layer]).checked;
     checked ? map.addLayer(groups[layer]) : map.removeLayer(groups[layer]);
 }
 
-/* ============================================================
-   Selección de ubicación (GPS / mapa)
-   ============================================================ */
-function setSeverity(level) {
-    selectedSeverity = level;
-    document.querySelectorAll('.severity-btn').forEach(btn => {
-        const active = btn.dataset.severity === level;
-        const colors = {
-            baja: 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600',
-            media: 'border-amber-400 bg-amber-50 dark:bg-amber-500/10 text-amber-600',
-            alta: 'border-red-400 bg-red-50 dark:bg-red-500/10 text-red-600'
-        };
-        btn.className = `severity-btn py-2 rounded-xl text-xs font-bold border-2 transition ${active ? colors[level] : 'border-slate-200 dark:border-slate-700 text-slate-500'}`;
-    });
+function moveMapTo(coords, zoom) {
+    map.flyTo(coords, zoom);
 }
 
 function setPickedCoords(lat, lng) {
     pickedCoords = [lat, lng];
     document.getElementById('coords-label').textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-
     if (tempMarker) map.removeLayer(tempMarker);
     tempMarker = L.marker(pickedCoords, {
         icon: createCustomIcon('fa-location-dot', '#6b1426', 'temp-marker-pulse')
@@ -477,7 +414,7 @@ function useMyLocation() {
     navigator.geolocation.getCurrentPosition(
         pos => {
             setPickedCoords(pos.coords.latitude, pos.coords.longitude);
-            map.flyTo(pickedCoords, 17);
+            moveMapTo(pickedCoords, 17);
             showToast('Ubicación detectada', 'success');
         },
         () => showToast('No se pudo obtener tu ubicación', 'error'),
@@ -485,22 +422,9 @@ function useMyLocation() {
     );
 }
 
-function locateMe() {
-    if (!navigator.geolocation) {
-        showToast('Tu navegador no soporta geolocalización', 'error');
-        return;
-    }
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            const coords = [pos.coords.latitude, pos.coords.longitude];
-            if (userMarker) map.removeLayer(userMarker);
-            userMarker = L.marker(coords, { icon: createCustomIcon('fa-person', '#2563eb') }).addTo(map);
-            userMarker.bindPopup('<p class="text-xs font-bold p-1">📍 Estás aquí</p>').openPopup();
-            map.flyTo(coords, 17);
-        },
-        () => showToast('No se pudo obtener tu ubicación', 'error'),
-        { enableHighAccuracy: true, timeout: 8000 }
-    );
+function goToCampus() {
+    moveMapTo(campusCoords, 17);
+    if (campusMarker) campusMarker.openPopup();
 }
 
 /* ============================================================
@@ -530,6 +454,7 @@ function closeSidebar() {
     sidebar.classList.remove('open');
     document.getElementById('sidebar-handle-icon').className = 'fa-solid fa-chevron-up';
 }
+
 
 // Cerrar modales con Escape
 document.addEventListener('keydown', (e) => {

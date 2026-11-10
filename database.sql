@@ -37,11 +37,47 @@ CREATE TABLE IF NOT EXISTS admin_users (
     password_hash VARCHAR(255) NOT NULL,
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE = InnoDB;
+-- Sin reportes de ejemplo; esta tabla inicia vacía.
 
--- ------------------------------------------------------------
--- Datos de ejemplo (semilla)
--- ------------------------------------------------------------
-INSERT INTO reports (type, location, description, latitude, longitude, severity, likes, created_at) VALUES
-('Luz Fundida / Zona Oscura', 'Calle Plinio D. Ordóñez tramo cercano a cancha', 'Falta iluminación en la luminaria #4. Se recomienda caminar en grupos.', 25.7956000, -100.3332000, 'alta', 12, NOW() - INTERVAL 2 HOUR),
-('Tráfico / Banqueta Obstruida', 'Cruce Raúl Salinas y Plinio Ordóñez', 'Tráfico pesado a las 13:45 hrs en cambio de turno. Precaución al cruzar.', 25.7964000, -100.3318000, 'media', 8, NOW() - INTERVAL 5 HOUR),
-('Zona Solitaria / Sospechosa', 'Terreno baldío atrás de la parada Transmetro', 'Terreno sin iluminación, evitar pasar solos después de las 19:00 hrs.', 25.7971000, -100.3301000, 'alta', 5, NOW() - INTERVAL 1 DAY);
+CREATE TABLE IF NOT EXISTS campus_location (
+  id          TINYINT UNSIGNED PRIMARY KEY,
+  name        VARCHAR(120) NOT NULL,
+  address     VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  latitude    DECIMAL(10,7) NOT NULL,
+  longitude   DECIMAL(10,7) NOT NULL,
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS safe_points (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name        VARCHAR(120) NOT NULL,
+  address     VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  latitude    DECIMAL(10,7) NOT NULL,
+  longitude   DECIMAL(10,7) NOT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_safe_point_name (name)
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS safe_routes (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name        VARCHAR(120) NOT NULL,
+  description TEXT NOT NULL,
+  color       CHAR(7) NOT NULL DEFAULT '#059669',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE = InnoDB;
+
+CREATE TABLE IF NOT EXISTS safe_route_points (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  route_id    INT UNSIGNED NOT NULL,
+  sequence_no SMALLINT UNSIGNED NOT NULL,
+  latitude    DECIMAL(10,7) NOT NULL,
+  longitude   DECIMAL(10,7) NOT NULL,
+  UNIQUE KEY uq_route_sequence (route_id, sequence_no),
+  CONSTRAINT fk_safe_route_points_route FOREIGN KEY (route_id)
+    REFERENCES safe_routes(id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+
+

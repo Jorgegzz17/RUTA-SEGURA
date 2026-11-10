@@ -139,7 +139,7 @@ function createReport(): void
     if ($lng === false || $lng < -180 || $lng > 180)      $errors[] = 'Longitud no válida';
     if (!in_array($severity, ['baja', 'media', 'alta'], true)) $errors[] = 'Severidad no válida';
 
-    if ($lat !== false && $lng !== false && distanceInMeters(25.7952, -100.3348, (float) $lat, (float) $lng) > 8000) {
+    if ($lat !== false && $lng !== false && distanceInMeters(25.7877647, -100.3296582, (float) $lat, (float) $lng) > 8000) {
         $errors[] = 'La ubicación debe estar a menos de 8 km del plantel';
     }
 

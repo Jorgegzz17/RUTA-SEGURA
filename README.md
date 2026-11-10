@@ -1,20 +1,22 @@
 # Rutas Seguras - CBTis 258 General Escobedo
 
-Aplicación web responsiva para consultar rutas y puntos seguros, publicar reportes estudiantiles y moderarlos desde una cuenta administrativa. Los reportes se guardan en MySQL.
+Aplicación web responsiva para consultar el mapa, publicar reportes con ubicación y moderarlos desde una cuenta administrativa. Los reportes se guardan en MySQL.
 
 ## Estructura
 
 ```
 index.php                 Página pública y mapa
 api/reports.php           API JSON para reportes
+api/locations.php         API de lectura y administración de ubicaciones
 admin/login.php           Acceso administrativo
 admin/index.php           Moderación (requiere iniciar sesión)
+admin/locations.php       Edición del plantel y puntos seguros
 config/database.php       Conexión PDO
 config/admin_auth.php     Sesión y protección CSRF de administración
 assets/css/style.css      Estilos responsivos y tema oscuro
 assets/js/app.js          Mapa y funcionalidades interactivas
 scripts/create_admin.php  Alta de administradores desde la consola
-database.sql              Esquema y datos de ejemplo
+database.sql              Esquema sin reportes de ejemplo
 ```
 
 ## Instalación local (XAMPP en Windows)
@@ -38,14 +40,15 @@ No existe registro público de administradores. Para crear otro, vuelve a ejecut
 
 ## Funcionalidades
 
-- Mapa Leaflet/OpenStreetMap con rutas peatonales y de transporte, puntos seguros y reportes.
-- Crear reportes sin publicar datos personales, con tipo, nivel de riesgo, ubicación y descripción.
+- Mapa Leaflet/OpenStreetMap con ubicación del plantel y puntos seguros administrables; inicia sin marcadores precargados.
+- En `admin/locations.php`, guardar el punto principal del plantel y agregar/eliminar puntos seguros; se pueden elegir en el mapa o ingresar coordenadas.
+- En esa misma pantalla, trazar una ruta con clics sobre el mapa; al terminar se agrega el plantel como destino, y la ruta se guarda y publica con su color.
+- Crear reportes con ubicación seleccionada en el mapa o GPS, tipo, nivel de riesgo y descripción.
 - Guardar reportes y apoyos en MySQL; búsqueda, filtros, estadísticas y estado del reporte.
-- Elegir la ubicación exacta del reporte con GPS o tocando el mapa; es obligatoria y se limita a 8 km del plantel.
+- Limitar la ubicación de cada reporte a 8 km del plantel.
 - Marcar reportes como resueltos/reactivarlos únicamente desde el panel de administración protegido por contraseña.
 - Inicio de sesión con contraseñas hash, cookie `HttpOnly`/`SameSite=Strict`, regeneración de sesión y token CSRF para acciones administrativas.
-- Modo oscuro, filtro de turno, banner nocturno, botón SOS y contactos rápidos.
-- En móvil, el panel se convierte en una hoja inferior deslizable.
+- Modo oscuro, botón SOS y contactos rápidos.
 
 ## API
 
@@ -58,5 +61,11 @@ Todas las respuestas están en JSON. Las acciones de escritura requieren `Conten
 | POST | `api/reports.php?action=create` | Público; valida ubicación, campos y límites |
 | POST | `api/reports.php?action=like` | Público |
 | POST | `api/reports.php?action=resolve` | Solo administrador; requiere sesión y cabecera `X-CSRF-Token` |
+| GET | `api/locations.php?action=list` | Público |
+| POST | `api/locations.php?action=campus-save` | Solo administrador; requiere sesión y CSRF |
+| POST | `api/locations.php?action=safe-point-create` | Solo administrador; requiere sesión y CSRF |
+| POST | `api/locations.php?action=safe-point-delete` | Solo administrador; requiere sesión y CSRF |
+| POST | `api/locations.php?action=route-create` | Solo administrador; requiere sesión y CSRF |
+| POST | `api/locations.php?action=route-delete` | Solo administrador; requiere sesión y CSRF |
 
 La aplicación necesita servir los archivos mediante Apache/PHP; abrir `index.php` directamente como archivo no activa el backend ni la conexión MySQL.

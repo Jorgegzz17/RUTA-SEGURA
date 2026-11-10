@@ -50,6 +50,9 @@ function h(string $value): string
                 </div>
             </div>
             <div class="flex items-center gap-2">
+                <a href="locations.php" class="rounded-lg px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700">
+                    <i class="fa-solid fa-location-dot mr-1"></i><span class="hidden sm:inline">Ubicaciones</span>
+                </a>
                 <a href="../index.php" class="rounded-lg px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700">
                     <i class="fa-solid fa-map mr-1"></i><span class="hidden sm:inline">Ver mapa</span>
                 </a>
